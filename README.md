@@ -44,6 +44,8 @@ Créer un **Web Service** Render relié au dépôt GitHub :
 | Start command | `npm start` |
 | Node | `22` ou plus récent |
 
+Le serveur écoute automatiquement le port fourni par Render sur `0.0.0.0`. Ne pas remplacer le Start command par `node server.js --port ...`.
+
 Dans les variables d’environnement Render, définir :
 
 ```text

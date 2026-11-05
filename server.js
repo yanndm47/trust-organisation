@@ -80,4 +80,10 @@ async function route(req, res) {
   const file = pathname === "/" ? "index.html" : pathname.slice(1); const filePath = path.join(ROOT, file); if (!filePath.startsWith(ROOT) || filePath.startsWith(UPLOADS) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) return send(res, 404, { error: "Fichier introuvable." }); const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg" }; res.writeHead(200, { "Content-Type": types[path.extname(filePath)] || "application/octet-stream" }); fs.createReadStream(filePath).pipe(res);
 }
 function createSession(res, user, req) { const token = crypto.randomBytes(32).toString("hex"); sessions.set(token, { userId: user.id, expires: Date.now() + 8 * 60 * 60 * 1000 }); const crossSite = Boolean(req?.headers.origin && !req.headers.origin.includes("localhost") && !req.headers.origin.includes("127.0.0.1")); const sameSite = crossSite ? "SameSite=None; Secure" : "SameSite=Lax"; send(res, 200, { user: safeUser(user) }, { "Set-Cookie": `trust_session=${token}; HttpOnly; ${sameSite}; Path=/; Max-Age=28800` }); }
-http.createServer(route).listen(process.env.PORT || 5500, () => console.log(`TRUST ORGANISATION disponible sur http://localhost:${process.env.PORT || 5500}`));
+const port = Number(process.env.PORT) || 5500;
+const server = http.createServer(route);
+server.on("error", error => {
+  console.error("Erreur du serveur HTTP :", error);
+  process.exitCode = 1;
+});
+server.listen(port, "0.0.0.0", () => console.log(`TRUST ORGANISATION disponible sur le port ${port}`));
