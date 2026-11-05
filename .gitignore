@@ -1,0 +1,8 @@
+node_modules/
+trust.sqlite
+trust.sqlite-shm
+trust.sqlite-wal
+uploads/*
+!.gitkeep
+.env
+.env.*
