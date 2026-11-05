@@ -2,16 +2,28 @@
 const CONTACT = "6 41 87 03 29";
 const ASSET = name => encodeURI(name);
 const API_BASE = window.TRUST_API_URL || "";
-const state = { view: "catalog", user: null, docs: [], news: [], fields: [], mobileMenu: false };
+const API_TIMEOUT = 12000;
+const state = { view: "catalog", user: null, docs: [], news: [], fields: [], mobileMenu: false, apiError: "" };
 const app = document.querySelector("#app");
 
 async function api(path, options = {}) {
-  const response = await fetch(`${API_BASE}/api${path}`, { credentials: API_BASE ? "include" : "same-origin", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
+  if (!API_BASE) throw new Error("Le serveur n’est pas configuré.");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT);
+  let response;
+  try {
+    response = await fetch(`${API_BASE.replace(/\/$/, "")}/api${path}`, { credentials: "include", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options, signal: controller.signal });
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("Le serveur met trop de temps à répondre. Réessayez dans quelques instants.");
+    throw new Error("Le serveur est momentanément indisponible. Réessayez dans quelques instants.");
+  } finally {
+    clearTimeout(timeout);
+  }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || "Une erreur est survenue.");
   return data;
 }
-function toast(message) { const el = document.querySelector("#toast"); el.textContent = message; el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 3200); }
+function toast(message) { const el = document.querySelector("#toast"); if (!el) return; el.textContent = message; el.classList.add("show"); clearTimeout(toast.timer); toast.timer = setTimeout(() => el.classList.remove("show"), 3200); }
 function go(view) { state.view = view; state.mobileMenu = false; render(); window.scrollTo({ top: 0, behavior: "smooth" }); }
 function escapeHTML(value) { return String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char]); }
 function nav() {
@@ -30,7 +42,7 @@ function home() {
 function newsCard(item) { return `<article class="card news-card">${item.imageUrl ? `<img src="${escapeHTML(item.imageUrl)}" alt="${escapeHTML(item.title)}">` : ""}<span class="doc-type">${escapeHTML(item.category || "Actualité")}</span><h3>${escapeHTML(item.title)}</h3><p>${escapeHTML(item.content)}</p><small class="muted">${escapeHTML(item.created_at || "")}</small></article>`; }
 function docCard(doc) { return `<article class="doc-card"><span class="doc-type">${escapeHTML(doc.type)}</span><h3>${escapeHTML(doc.title)}</h3><div class="doc-meta"><span>Niveau ${escapeHTML(doc.level)}</span><span>•</span><span>${escapeHTML(doc.subject)}</span><span>•</span><span>${escapeHTML(doc.size || "Document")}</span></div><button class="btn btn-ghost btn-sm" onclick="downloadDoc(${doc.id})">Télécharger le document ↓</button></article>`; }
 function catalog() {
-  return `<section class="section"><div class="section-head"><div><span class="eyebrow">Bibliothèque TRUST</span><h2>Les documents académiques</h2></div><p>Les documents sont publiés et classés par l’administrateur. Revenez bientôt pour découvrir les premières ressources.</p></div><div class="filters"><input id="search" class="input" placeholder="Rechercher un cours, une matière..." oninput="filterDocs()"><select id="level" class="select" onchange="filterDocs()"><option value="">Tous les niveaux</option>${[1,2,3,4,5].map(level => `<option>${level}</option>`).join("")}</select><select id="field" class="select" onchange="filterDocs()"><option value="">Toutes les filières</option>${state.fields.map(field => `<option>${escapeHTML(field.name)}</option>`).join("")}</select><select id="type" class="select" onchange="filterDocs()"><option value="">Tous les types</option><option>Cours</option><option>TD</option><option>Épreuve</option><option>Ressource</option></select></div><div id="doc-results" class="doc-grid">${state.docs.length ? state.docs.map(docCard).join("") : `<div class="empty">Aucun document n’a encore été publié par l’administrateur.</div>`}</div></section>`;
+  return `<section class="section">${state.apiError ? `<div class="server-notice" role="alert"><strong>Service temporairement indisponible.</strong><br>${escapeHTML(state.apiError)}<button class="btn btn-ghost btn-sm" onclick="retryLoad()">Réessayer</button></div>` : ""}<div class="section-head"><div><span class="eyebrow">Bibliothèque TRUST</span><h2>Les documents académiques</h2></div><p>Les documents sont publiés et classés par l’administrateur. Revenez bientôt pour découvrir les premières ressources.</p></div><div class="filters"><input id="search" class="input" placeholder="Rechercher un cours, une matière..." oninput="filterDocs()"><select id="level" class="select" onchange="filterDocs()"><option value="">Tous les niveaux</option>${[1,2,3,4,5].map(level => `<option>${level}</option>`).join("")}</select><select id="field" class="select" onchange="filterDocs()"><option value="">Toutes les filières</option>${state.fields.map(field => `<option>${escapeHTML(field.name)}</option>`).join("")}</select><select id="type" class="select" onchange="filterDocs()"><option value="">Tous les types</option><option>Cours</option><option>TD</option><option>Épreuve</option><option>Ressource</option></select></div><div id="doc-results" class="doc-grid">${state.docs.length ? state.docs.map(docCard).join("") : `<div class="empty">Aucun document n’a encore été publié par l’administrateur.</div>`}</div></section>`;
 }
 function filterDocs() { const term = document.querySelector("#search").value.toLowerCase(), level = document.querySelector("#level").value, field = document.querySelector("#field").value, type = document.querySelector("#type").value; const docs = state.docs.filter(d => (!term || `${d.title} ${d.subject}`.toLowerCase().includes(term)) && (!level || d.level === level) && (!field || d.field === field) && (!type || d.type === type)); document.querySelector("#doc-results").innerHTML = docs.length ? docs.map(docCard).join("") : `<div class="empty">Aucun document ne correspond à votre recherche.</div>`; }
 function news() { return `<section class="section"><div class="section-head"><div><span class="eyebrow">La vie de l'organisation</span><h2>Actualités</h2></div><p>Découvrez les initiatives, annonces et moments importants de la grande famille TRUST.</p></div><div class="news-grid">${state.news.length ? state.news.map(newsCard).join("") : `<div class="empty">Aucune actualité n’a encore été publiée.</div>`}</div></section>`; }
@@ -74,6 +86,8 @@ async function removeDoc(id) { try { await api(`/documents/${id}`, { method: "DE
 async function removeNews(id) { try { await api(`/news/${id}`, { method: "DELETE" }); await loadData(); render(); toast("Actualité supprimée."); } catch (error) { toast(error.message); } }
 async function removeAccount(id) { try { await api(`/users/${id}`, { method: "DELETE" }); await loadData(); render(); toast("Compte supprimé."); } catch (error) { toast(error.message); } }
 async function removeField(id) { try { await api(`/fields/${id}`, { method: "DELETE" }); await loadData(); render(); toast("Filière supprimée."); } catch (error) { toast(error.message); } }
-async function loadData() { const data = await api("/bootstrap"); state.docs = data.documents; state.news = data.news; state.user = data.user; state.stats = data.stats; state.accounts = data.accounts || []; state.fields = data.fields || []; }
-async function render() { if (state.view === "admin" && (!state.user || !state.user.isAdmin)) state.view = "catalog"; app.innerHTML = nav() + (state.view === "catalog" ? catalog() : state.view === "about" ? about() : state.view === "news" ? news() : state.view === "dashboard" ? dashboard() : admin()) + footer(); }
-loadData().then(render).catch((error) => { render(); toast(error.message.includes("Failed") ? "Serveur API indisponible : lancez npm start ou configurez TRUST_API_URL." : error.message); });
+async function loadData() { const data = await api("/bootstrap"); state.docs = data.documents; state.news = data.news; state.user = data.user; state.stats = data.stats; state.accounts = data.accounts || []; state.fields = data.fields || []; state.apiError = ""; }
+async function retryLoad() { state.apiError = ""; render(); try { await loadData(); render(); } catch (error) { state.apiError = error.message; render(); } }
+function render() { if (state.view === "admin" && (!state.user || !state.user.isAdmin)) state.view = "catalog"; app.innerHTML = nav() + (state.view === "catalog" ? catalog() : state.view === "about" ? about() : state.view === "news" ? news() : state.view === "dashboard" ? dashboard() : admin()) + footer(); }
+render();
+loadData().then(render).catch((error) => { state.apiError = error.message; render(); });
